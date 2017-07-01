@@ -103,6 +103,34 @@ class SelectorCV(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        split_method = KFold(2)
+        hidden_states_score_dict = {}
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        # for every possible number of hidden states parameter
+        for hidden_states in range(self.min_n_components, self.max_n_components + 1):
+            split_training_score_array = []
+
+            # split the data into training sets and testing sets
+            for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                x_train, lengths_train = combine_sequences(cv_train_idx, self.sequences)
+                x_test, lengths_test = combine_sequences(cv_test_idx, self.sequences)
+
+                try:
+                    # create the model with training sets
+                    model: GaussianHMM = GaussianHMM(n_components=hidden_states, covariance_type="diag", n_iter=1000,
+                                        random_state=self.random_state, verbose=False).fit(x_train, lengths_train)
+
+                    # calculate the score of the model with testing sets
+                    split_training_score_array.append(model.score(x_test, lengths_test))
+                except:
+                    continue
+
+            # record the average score for the specific hidden states parameter
+            if len(split_training_score_array) > 0:
+                hidden_states_score_dict[hidden_states] = np.average(split_training_score_array)
+
+        # find the optimal hidden states which gives highest average score
+        optimal_hidden_states = max(hidden_states_score_dict, key=hidden_states_score_dict.get)
+
+        # use the optimal hidden states parameter to train a new model with all data
+        return self.base_model(optimal_hidden_states)

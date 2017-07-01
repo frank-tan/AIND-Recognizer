@@ -75,10 +75,34 @@ class SelectorBIC(ModelSelector):
         :return: GaussianHMM object
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        hidden_states_bic_dict = {}
+        # for every possible number of hidden states parameter
+        for hidden_states in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                model: GaussianHMM = self.base_model(hidden_states)
+                log_l = model.score(self.X, self.lengths)
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+                # data points is the number of rows
+                data_points = self.X.shape[0]
 
+                # calculation for parameters
+                states = hidden_states
+                features = self.X.shape[1]
+                starting_probs = states - 1
+                transition_probs = states * (states - 1)
+                means = states * features
+                variance = states * features
+                params = starting_probs + transition_probs + means + variance
+                bic = -2 * log_l + params * np.log(data_points)
+                hidden_states_bic_dict[hidden_states] = bic
+            except:
+                continue
+
+        # find the optimal number of hidden states which give the lowest bic
+        optimal_hidden_states = min(hidden_states_bic_dict, key=hidden_states_bic_dict.get)
+
+        # use the optimal hidden states parameter to train a new model with all data
+        return self.base_model(optimal_hidden_states)
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion

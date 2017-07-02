@@ -75,7 +75,7 @@ class SelectorBIC(ModelSelector):
         :return: GaussianHMM object
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-        hidden_states_bic_dict = {}
+        model_bic_dict = {}
         # for every possible number of hidden states parameter
         for hidden_states in range(self.min_n_components, self.max_n_components + 1):
             try:
@@ -94,15 +94,12 @@ class SelectorBIC(ModelSelector):
                 variance = states * features
                 params = starting_probs + transition_probs + means + variance
                 bic = -2 * log_l + params * np.log(data_points)
-                hidden_states_bic_dict[hidden_states] = bic
+                model_bic_dict[model] = bic
             except:
                 continue
 
-        # find the optimal number of hidden states which give the lowest bic
-        optimal_hidden_states = min(hidden_states_bic_dict, key=hidden_states_bic_dict.get)
-
-        # use the optimal hidden states parameter to train a new model with all data
-        return self.base_model(optimal_hidden_states)
+        # return the model which has the lowest bic
+        return min(model_bic_dict, key=model_bic_dict.get)
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion
@@ -115,9 +112,33 @@ class SelectorDIC(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        model_dic_dict = {}
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        # for every possible number of hidden states parameter
+        for hidden_states in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                model: GaussianHMM = self.base_model(hidden_states)
+                log_l = model.score(self.X, self.lengths)
+                sum_all_other_log_l = 0
+                m = 0
+
+                # for each other word
+                for other_word in self.hwords.keys():
+                    if self.this_word != other_word:
+                        other_word_x, other_word_lengths = self.hwords[other_word]
+                        # score the model with other words and add it to the sum
+                        sum_all_other_log_l += model.score(other_word_x, other_word_lengths)
+                        m += 1
+                assert m > 1
+                dic = log_l - sum_all_other_log_l / (m - 1)
+
+                # calculate dic for the number of hidden states
+                model_dic_dict[model] = dic
+            except:
+                continue
+
+        # return the model which has the highest dic
+        return max(model_dic_dict, key=model_dic_dict.get)
 
 
 class SelectorCV(ModelSelector):

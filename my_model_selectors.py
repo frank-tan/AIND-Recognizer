@@ -81,25 +81,27 @@ class SelectorBIC(ModelSelector):
             try:
                 model: GaussianHMM = self.base_model(hidden_states)
                 log_l = model.score(self.X, self.lengths)
-
-                # data points is the number of rows
-                data_points = self.X.shape[0]
-
-                # calculation for parameters
-                states = hidden_states
-                features = self.X.shape[1]
-                starting_probs = states - 1
-                transition_probs = states * (states - 1)
-                means = states * features
-                variance = states * features
-                params = starting_probs + transition_probs + means + variance
-                bic = -2 * log_l + params * np.log(data_points)
-                model_bic_dict[model] = bic
             except:
-                continue
+                log_l = float("-inf")
 
+            # data points is the number of rows
+            data_points = self.X.shape[0]
+
+            # calculation for parameters
+            states = hidden_states
+            features = self.X.shape[1]
+            starting_probs = states - 1
+            transition_probs = states * (states - 1)
+            means = states * features
+            variance = states * features
+            params = starting_probs + transition_probs + means + variance
+            bic = -2 * log_l + params * np.log(data_points)
+            model_bic_dict[model] = bic
+
+        assert len(model_bic_dict.keys()) > 0
         # return the model which has the lowest bic
-        return min(model_bic_dict, key=model_bic_dict.get)
+        return self.base_model(self.n_constant)
+
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion
@@ -119,23 +121,29 @@ class SelectorDIC(ModelSelector):
             try:
                 model: GaussianHMM = self.base_model(hidden_states)
                 log_l = model.score(self.X, self.lengths)
-                sum_all_other_log_l = 0
-                m = 0
 
-                # for each other word
-                for other_word in self.hwords.keys():
-                    if self.this_word != other_word:
-                        other_word_x, other_word_lengths = self.hwords[other_word]
-                        # score the model with other words and add it to the sum
-                        sum_all_other_log_l += model.score(other_word_x, other_word_lengths)
-                        m += 1
-                assert m > 1
-                dic = log_l - sum_all_other_log_l / (m - 1)
-
-                # calculate dic for the number of hidden states
-                model_dic_dict[model] = dic
             except:
-                continue
+                log_l = float("-inf")
+
+            sum_all_other_log_l = 0
+            m = 0
+
+            # for each other word
+            for other_word in self.hwords.keys():
+                if self.this_word != other_word:
+                    other_word_x, other_word_lengths = self.hwords[other_word]
+                    # score the model with other words and add it to the sum
+                    try:
+                        other_word_score = model.score(other_word_x, other_word_lengths)
+                    except:
+                        other_word_score = float("+inf")
+                    sum_all_other_log_l += other_word_score
+                    m += 1
+            assert m > 1
+            dic = log_l - sum_all_other_log_l / (m - 1)
+
+            # calculate dic for the number of hidden states
+            model_dic_dict[model] = dic
 
         # return the model which has the highest dic
         return max(model_dic_dict, key=model_dic_dict.get)
@@ -148,7 +156,12 @@ class SelectorCV(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-        split_method = KFold(2)
+        n_data_sets = len(self.sequences)
+        if n_data_sets < 2:
+            return self.base_model(self.n_constant)
+
+        n_splits = min(n_data_sets, 3)
+        split_method = KFold(n_splits)
         hidden_states_score_dict = {}
 
         # for every possible number of hidden states parameter
